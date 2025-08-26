@@ -47,7 +47,7 @@ try:
 except Exception:
     final_life_used, final_life_remaining = 0, 100
 
-# --- 4. LAYOUT DO APP DASH (CORRIGIDO) ---
+# --- 4. LAYOUT DO APP DASH ---
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.SOLAR])
 app.title = "Digital Twin - Análise de Durabilidade"
 
@@ -75,7 +75,6 @@ app.layout = dbc.Container([
                 ])
             ]),
             html.Br(),
-            # --- CARD DO FEA REINSERIDO AQUI ---
             dbc.Card([
                 dbc.CardHeader("Retroalimentação por Simulação"),
                 dbc.CardBody([
@@ -97,9 +96,12 @@ app.layout = dbc.Container([
     [Input('sensor-dropdown', 'value')]
 )
 def update_graph(selected_sensor):
+    # --- MUDANÇA PRINCIPAL: O parâmetro 'color="evento"' foi removido daqui ---
+    # Isso faz com que o gráfico volte a ter uma linha de cor única.
     fig = px.line(
-        df_final, x='timestamp', y=selected_sensor, color='evento',
-        title=f'Histórico do Sensor: {selected_sensor} por Tipo de Trecho',
+        df_final, x='timestamp', y=selected_sensor,
+        title=f'Histórico do Sensor: {selected_sensor}',
+        # Mantemos 'evento' no hover_data para ainda termos a informação ao passar o mouse.
         hover_data={'evento': True, 'vibracao_g': ':.2f'}
     )
     
@@ -114,7 +116,7 @@ def update_graph(selected_sensor):
     
     fig.update_layout(
         template='plotly_dark', xaxis_title='Tempo', yaxis_title=selected_sensor,
-        legend_title_text='Eventos/Trechos'
+        legend_title_text='Legenda'
     )
     return fig
 
