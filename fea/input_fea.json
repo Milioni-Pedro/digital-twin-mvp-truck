@@ -1,4 +1,4 @@
 {
-    "avg_temp_C": 35.01,
-    "max_vibracao_g": 8.57
+    "analysis_type": "estatico",
+    "peak_deformacao_micros": 23.00259840172961
 }

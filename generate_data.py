@@ -3,7 +3,7 @@ import numpy as np
 import os
 from datetime import datetime, timedelta
 
-# --- CONFIGURAÇÕES ---
+# --- CONFIGURAÇÕES GLOBAIS ---
 NUM_SAMPLES = 10000
 SAMPLING_INTERVAL_S = 10
 START_DATE = datetime(2025, 8, 20, 8, 0, 0)
@@ -23,14 +23,13 @@ def generate_road_segment(num_points, road_type):
     return np.zeros(num_points)
 
 def generate_data():
-    print("Iniciando a geração de dados com foco em perfis de durabilidade...")
+    print("Gerando dados com eventos para múltiplas análises FEA...")
     timestamps = pd.to_datetime([START_DATE + timedelta(seconds=i * SAMPLING_INTERVAL_S) for i in range(NUM_SAMPLES)])
     
     df = pd.DataFrame({'timestamp': timestamps})
-    df['evento'] = "Operação Normal" # Coluna de eventos criada na fonte
+    df['evento'] = "Operação Normal"
     df['velocidade_kmh'] = 80 + np.random.normal(0, 5, NUM_SAMPLES)
     
-    # --- MUDANÇA PRINCIPAL: Simular trechos de diferentes pistas ---
     segment_length = NUM_SAMPLES // 4
     df.loc[0:segment_length, 'evento'] = "Trecho: Asfalto Liso"
     df.loc[segment_length:2*segment_length, 'evento'] = "Trecho: Paralelepípedo"
@@ -45,21 +44,33 @@ def generate_data():
     ]
     df['vibracao_g'] = np.concatenate(vib_segments).clip(min=0)
     
-    # Outros sensores com base na vibração e velocidade
     df['deformacao_micros'] = 10 * df['vibracao_g'] + np.random.normal(5, 2, NUM_SAMPLES)
     df['temperatura_C'] = 35 + np.random.normal(0, 2, NUM_SAMPLES)
     df['radiacao_Wm2'] = 600 + np.random.normal(0, 50, NUM_SAMPLES)
 
-    # Injetar anomalias pontuais sobre o perfil de fadiga
     impact_index = np.random.randint(segment_length, 2*segment_length)
-    df.loc[impact_index, 'vibracao_g'] *= 3 # Impacto severo
+    df.loc[impact_index, 'vibracao_g'] *= 3
     df.loc[impact_index, 'deformacao_micros'] *= 3
     df.loc[impact_index, 'evento'] = "Anomalia: Impacto Severo"
     
-    print(f"Salvando dados em: {CSV_FILE_PATH}")
+    static_load_start = np.random.randint(3*segment_length, NUM_SAMPLES - 10)
+    static_load_end = static_load_start + 5
+    df.loc[static_load_start:static_load_end, 'deformacao_micros'] += 150
+    df.loc[static_load_start:static_load_end, 'velocidade_kmh'] = 1
+    df.loc[static_load_start:static_load_end, 'evento'] = "Evento: Carga Estática Alta"
+
+    modal_start = np.random.randint(0, segment_length - 201)
+    modal_end = modal_start + 200
+    
+    # --- A CORREÇÃO ESTÁ AQUI ---
+    time_chunk = np.arange(201) # MUDADO DE 200 PARA 201
+    
+    df.loc[modal_start:modal_end, 'vibracao_g'] += 2.0 * np.sin(2 * np.pi * 15 * time_chunk * (SAMPLING_INTERVAL_S/201)) + 0.5
+    df.loc[modal_start:modal_end, 'evento'] = "Evento: Vibração Periódica (Risco Modal)"
+    
     df.to_csv(CSV_FILE_PATH, index=False)
-    print("\nDados de durabilidade gerados! 5 primeiras linhas:")
-    print(df.head())
+    print(f"Dados gerados e salvos em: {CSV_FILE_PATH}")
+    print(df.tail())
 
 if __name__ == "__main__":
     generate_data()
