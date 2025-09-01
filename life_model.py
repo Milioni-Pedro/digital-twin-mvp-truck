@@ -2,61 +2,55 @@ import pandas as pd
 import numpy as np
 import os
 
-# --- 1. CONFIGURAÇÕES E PARÂMETROS DO MODELO DE FADIGA ---
-
-# --- MUDANÇA PRINCIPAL: Contextualização para Durabilidade ---
-# AVISO: Estes parâmetros são o PONTO DE CALIBRAÇÃO com o FEA de durabilidade.
-# O processo é:
-# 1. Rodar um perfil de carga (ex: 8h de dados) no software de FEA e obter o dano total (a "Verdade").
-# 2. Rodar o mesmo perfil de 8h neste script.
-# 3. Ajustar os coeficientes W_... e TOTAL_LIFE_UNITS até que o resultado deste script
-#    seja o mais próximo possível do resultado do FEA.
-# --------------------------------------------------------------------
-
-# TOTAL_LIFE_UNITS: Representa o dano total que o componente suporta até a falha.
-# Este valor é diretamente derivado das análises de fadiga (curva S-N do material).
+# --- CONFIGURAÇÕES E PARÂMETROS DO MODELO DE FADIGA ---
 TOTAL_LIFE_UNITS = 5_000_000 
-
-# Pesos para cada sensor na fórmula de dano por fadiga.
-W_VIBRATION = 2.0  # Vibração é o principal fator de dano em fadiga.
-W_DEFORMATION = 0.5 # Deformação contribui, mas é correlacionada com a vibração.
-W_TEMP = 0.2       # Temperatura acelera a degradação do material.
+W_VIBRATION = 2.0
+W_DEFORMATION = 0.5
+W_TEMP = 0.2
 TEMP_BASELINE_C = 25.0
 
 user_home = os.path.expanduser("~")
 project_folder = os.path.join(user_home, "digital_twin_mvp")
-input_csv_path = os.path.join(project_folder, "sunvisor_simulated_data.csv")
-output_csv_path = os.path.join(project_folder, "life_estimate.csv")
+input_csv_path = os.path.join(project_folder, "fleet_simulated_data.csv") # Ler o novo arquivo
+output_csv_path = os.path.join(project_folder, "fleet_life_estimate.csv") # Novo arquivo de saída
 
-def calculate_fatigue_life(df_input):
-    print("Iniciando cálculo de consumo de vida por fadiga...")
-    df = df_input.copy()
-
+def calculate_fatigue_life(df_group):
+    """Aplica o cálculo de vida a um grupo de dados (um único chassi)."""
+    df = df_group.copy()
+    
+    # Adiciona um desgaste inicial para o "veículo antigo"
+    initial_damage = 0
+    if df['chassis_number'].iloc[0] == 'CH-C03':
+        initial_damage = TOTAL_LIFE_UNITS * 0.4 # Começa com 40% da vida consumida
+        
     temp_damage_factor = (df['temperatura_C'] - TEMP_BASELINE_C).clip(lower=0)
-
-    # Fórmula de Dano por Fadiga (Proxy da Regra de Miner)
+    
     fatigue_damage_increment = (
         W_VIBRATION * df['vibracao_g']**2 +
         W_DEFORMATION * df['deformacao_micros'] +
         W_TEMP * temp_damage_factor
     )
-    df['fatigue_damage_increment'] = fatigue_damage_increment
-    df['fatigue_damage_cumulative'] = df['fatigue_damage_increment'].cumsum()
+    df['fatigue_damage_cumulative'] = fatigue_damage_increment.cumsum() + initial_damage
 
     df['life_used_percent'] = (df['fatigue_damage_cumulative'] / TOTAL_LIFE_UNITS) * 100
     df['life_used_percent'] = df['life_used_percent'].clip(upper=100)
     df['life_remaining_percent'] = 100 - df['life_used_percent']
 
-    print("Cálculo de fadiga finalizado.")
-    return df[['timestamp', 'evento', 'fatigue_damage_increment', 'fatigue_damage_cumulative', 'life_used_percent', 'life_remaining_percent']]
+    return df
 
 if __name__ == "__main__":
     try:
-        df_sensors = pd.read_csv(input_csv_path)
-        df_life = calculate_fatigue_life(df_sensors)
-        df_life.to_csv(output_csv_path, index=False)
-        print(f"Arquivo de estimativa de vida salvo em: {output_csv_path}")
-        print("\nÚltimas 5 entradas do cálculo de vida:")
-        print(df_life.tail())
+        fleet_df = pd.read_csv(input_csv_path)
+        print("Calculando estimativa de vida para toda a frota...")
+        
+        # --- MUDANÇA PRINCIPAL: Usar groupby para calcular por chassi ---
+        fleet_life_df = fleet_df.groupby('chassis_number', group_keys=False).apply(calculate_fatigue_life)
+        
+        fleet_life_df.to_csv(output_csv_path, index=False)
+        print(f"Arquivo de estimativa de vida da frota salvo em: {output_csv_path}")
+        
+        print("\nÚltimos dados de vida para cada chassi:")
+        print(fleet_life_df.groupby('chassis_number').tail(1))
+
     except FileNotFoundError:
         print(f"ERRO: Arquivo de entrada '{input_csv_path}' não encontrado. Execute 'generate_data.py' primeiro.")

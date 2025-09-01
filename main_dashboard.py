@@ -6,150 +6,111 @@ from dash import dcc, html
 from dash.dependencies import Input, Output, State
 import dash_bootstrap_components as dbc
 import os
-import json
-import subprocess
-from sklearn.ensemble import IsolationForest
-import numpy as np
 
-# --- 1. CONFIGURAÇÕES E CAMINHOS ---
+# --- 1. CONFIGURAÇÕES E CARREGAMENTO ---
 user_home = os.path.expanduser("~")
 project_folder = os.path.join(user_home, "digital_twin_mvp")
-raw_data_path = os.path.join(project_folder, "sunvisor_simulated_data.csv")
-life_input_path = os.path.join(project_folder, "life_estimate.csv")
-fea_input_path = os.path.join(project_folder, "fea", "input_fea.json")
-fea_output_path = os.path.join(project_folder, "fea", "output_fea.json")
-mock_solver_path = os.path.join(project_folder, "fea", "mock_fea_solver.py")
-SAMPLING_INTERVAL_S = 10
-sensor_options = ['temperatura_C', 'vibracao_g', 'radiacao_Wm2', 'velocidade_kmh', 'deformacao_micros']
+# --- MUDANÇA: Carregar os novos arquivos da frota ---
+data_path = os.path.join(project_folder, "fleet_simulated_data.csv")
+life_path = os.path.join(project_folder, "fleet_life_estimate.csv")
 
-# --- 2. FUNÇÃO DE PROCESSAMENTO DE DADOS ---
-def detect_anomalies(data):
-    df_anom = data.copy()
-    model = IsolationForest(contamination=0.001, random_state=42)
-    predictions = model.fit_predict(df_anom[sensor_options])
-    df_anom['is_anomaly'] = [True if x == -1 else False for x in predictions]
-    df_anom.loc[df_anom['evento'] == 'Anomalia: Impacto Severo', 'is_anomaly'] = True
-    return df_anom
-
-# --- 3. CARREGAMENTO E PROCESSAMENTO INICIAL ---
 try:
-    df_raw = pd.read_csv(raw_data_path)
-    df_raw['timestamp'] = pd.to_datetime(df_raw['timestamp'])
+    df_data = pd.read_csv(data_path)
+    df_data['timestamp'] = pd.to_datetime(df_data['timestamp'])
+    df_life = pd.read_csv(life_path)
+    df_life['timestamp'] = pd.to_datetime(df_life['timestamp'])
 except Exception as e:
-    print(f"Erro ao carregar dados brutos: {e}. Execute generate_data.py")
+    print(f"Erro ao carregar arquivos de dados da frota: {e}. Execute generate_data.py e life_model.py")
     exit()
-df_final = detect_anomalies(df_raw)
-try:
-    df_life = pd.read_csv(life_input_path)
-    final_life_used = df_life['life_used_percent'].iloc[-1]
-    final_life_remaining = df_life['life_remaining_percent'].iloc[-1]
-except Exception:
-    final_life_used, final_life_remaining = 0, 100
 
-# --- 4. LAYOUT DO APP DASH ---
+# Juntando os dataframes para ter tudo em um só lugar
+df_final = pd.merge(df_data, df_life.drop(columns=['timestamp', 'evento']), on=['chassis_number', 'temperatura_C', 'vibracao_g', 'velocidade_kmh', 'deformacao_micros', 'radiacao_Wm2'], how='left')
+
+CHASSIS_OPTIONS = df_final['chassis_number'].unique()
+SENSOR_OPTIONS = ['temperatura_C', 'vibracao_g', 'radiacao_Wm2', 'velocidade_kmh', 'deformacao_micros']
+
+# --- 2. LAYOUT DO APP DASH (com seletor de chassi) ---
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.SOLAR])
-app.title = "Digital Twin - Análise de Engenharia"
-gauge_fig = go.Figure(go.Indicator(
-    mode="gauge+number", value=final_life_used, title={'text': "Consumo de Vida por Fadiga (%)"},
-    gauge={'axis': {'range': [0, 100]}, 'bar': {'color': "orange"}, 'steps': [{'range': [0, 80], 'color': "green"}, {'range': [80, 100], 'color': "red"}]}
-))
-gauge_fig.update_layout(template='plotly_dark', height=250, margin=dict(l=10, r=10, t=50, b=10))
+app.title = "Digital Twin - Gestão de Frota"
+
 app.layout = dbc.Container([
-    dbc.Row([dbc.Col(html.H1("Digital Twin: Plataforma de Análise de Engenharia", className="text-center text-primary mb-4"), width=12)]),
+    dbc.Row([dbc.Col(html.H1("Digital Twin: Painel de Gestão de Frota", className="text-center text-primary mb-4"), width=12)]),
     dbc.Row([
+        # --- Coluna de Controles ---
         dbc.Col([
             dbc.Card([dbc.CardBody([
-                html.H4("Controles de Visualização", className="card-title"),
-                dcc.Dropdown(id='sensor-dropdown', options=[{'label': s, 'value': s} for s in sensor_options], value='vibracao_g'),
+                html.H4("Filtros de Visualização", className="card-title"),
+                html.Label("Selecione o(s) Chassi(s):"),
+                dcc.Dropdown(
+                    id='chassis-selector',
+                    options=[{'label': ch, 'value': ch} for ch in CHASSIS_OPTIONS],
+                    value=[CHASSIS_OPTIONS[0]], # Valor inicial é o primeiro chassi
+                    multi=True # --- PERMITE MÚLTIPLA SELEÇÃO ---
+                ),
+                html.Hr(),
+                html.Label("Selecione o Sensor:"),
+                dcc.Dropdown(id='sensor-selector', options=[{'label': s, 'value': s} for s in SENSOR_OPTIONS], value='vibracao_g'),
             ])]),
             html.Br(),
             dbc.Card([
-                dbc.CardHeader("Estimativa de Vida por Fadiga"),
-                dbc.CardBody([dcc.Graph(id='life-gauge', figure=gauge_fig)])
+                dbc.CardHeader("Saúde do Chassi (Primeiro Selecionado)"),
+                dbc.CardBody(id='health-cards') # Esta seção será atualizada por um callback
             ]),
-            html.Br(),
-            dbc.Card([
-                dbc.CardHeader("Simulação de Engenharia 'What-if'"),
-                dbc.CardBody([
-                    html.Label("Selecione o Tipo de Análise:"),
-                    dcc.RadioItems(
-                        options=[
-                            {'label': 'Estático', 'value': 'estatico'},
-                            {'label': 'Fadiga', 'value': 'fadiga'},
-                            {'label': 'Modal', 'value': 'modal'},
-                        ],
-                        value='fadiga', id='analysis-type-selector', inline=True, inputStyle={"margin-left": "20px", "margin-right": "5px"}
-                    ),
-                    dbc.Button("Rodar Simulação com Dados Atuais", id="run-fea-button", color="warning", className="mt-3 w-100"),
-                    html.Hr(),
-                    dcc.Loading(id="loading-fea", children=[html.Div(id='fea-results-output')], type="default")
-                ])
-            ])
         ], width=3),
-        dbc.Col([dcc.Graph(id='sensor-graph', style={'height': '85vh'})], width=9)
+        # --- Coluna do Gráfico ---
+        dbc.Col([
+            dcc.Graph(id='main-graph', style={'height': '85vh'})
+        ], width=9)
     ])
 ], fluid=True, className="dbc")
 
-# --- 5. CALLBACKS ---
-@app.callback(Output('sensor-graph', 'figure'), [Input('sensor-dropdown', 'value')])
-def update_graph(selected_sensor):
+# --- 3. CALLBACKS ---
+
+# Callback 1: Atualiza o gráfico principal
+@app.callback(
+    Output('main-graph', 'figure'),
+    [Input('chassis-selector', 'value'),
+     Input('sensor-selector', 'value')]
+)
+def update_main_graph(selected_chassis, selected_sensor):
+    if not selected_chassis:
+        return go.Figure().update_layout(template='plotly_dark', title_text='Selecione um chassi para começar')
+
+    dff = df_final[df_final['chassis_number'].isin(selected_chassis)]
+    
+    # --- MÁGICA: `color='chassis_number'` cria uma linha para cada chassi ---
     fig = px.line(
-        df_final, x='timestamp', y=selected_sensor,
+        dff, x='timestamp', y=selected_sensor, color='chassis_number',
         title=f'Histórico do Sensor: {selected_sensor}',
-        hover_data={'evento': True, 'vibracao_g': ':.2f'}
+        labels={'chassis_number': 'Chassi'}
     )
-    anomalies_df = df_final[df_final['is_anomaly']]
-    fig.add_trace(go.Scatter(
-        x=anomalies_df['timestamp'], y=anomalies_df[selected_sensor], mode='markers',
-        marker=dict(symbol='x', size=12, color='#FF4136', line=dict(width=2)),
-        name='Anomalia Pontual',
-        hovertemplate="<b>%{customdata[0]}</b><br>Timestamp: %{x}<br>Valor: %{y:.2f}<extra></extra>",
-        customdata=anomalies_df[['evento']]
-    ))
-    fig.update_layout(
-        template='plotly_dark', xaxis_title='Tempo', yaxis_title=selected_sensor, legend_title_text='Legenda'
-    )
+    fig.update_layout(template='plotly_dark', legend_title_text='Legenda')
     return fig
 
+# Callback 2: Atualiza os cards de saúde
 @app.callback(
-    Output('fea-results-output', 'children'),
-    Input('run-fea-button', 'n_clicks'),
-    State('analysis-type-selector', 'value'),
-    prevent_initial_call=True
+    Output('health-cards', 'children'),
+    [Input('chassis-selector', 'value')]
 )
-def run_fea_simulation(n_clicks, analysis_type):
-    recent_data = df_final.tail(500)
-    input_data = {"analysis_type": analysis_type}
-    if analysis_type == 'estatico':
-        input_data["peak_deformacao_micros"] = recent_data['deformacao_micros'].max()
-    elif analysis_type == 'fadiga':
-        input_data["avg_vibracao_g"] = recent_data['vibracao_g'].mean()
-    elif analysis_type == 'modal':
-        vibration_data = recent_data['vibracao_g'].to_numpy()
-        fft_result = np.fft.fft(vibration_data - vibration_data.mean())
-        freqs = np.fft.fftfreq(len(vibration_data), d=SAMPLING_INTERVAL_S)
-        peak_freq_idx = np.argmax(np.abs(fft_result[1:len(fft_result)//2])) + 1
-        dominant_freq = freqs[peak_freq_idx]
-        input_data["dominant_freq_hz"] = dominant_freq
-    with open(fea_input_path, 'w') as f: json.dump(input_data, f, indent=4)
-    subprocess.run(['python', mock_solver_path], check=True, capture_output=True, text=True)
-    with open(fea_output_path, 'r') as f: results = json.load(f)
-    alerts = [dbc.Alert(f"Tipo de Análise: {results.pop('tipo_analise')}", color="primary")]
-    results.pop("timestamp", None)
-    for key, value in results.items():
-        color = "info"
-        risk_key = str(value).upper()
-        if "risco" in key.lower() and ("ALTO" in risk_key or "MÉDIO" in risk_key): color = "danger"
-        # Adiciona verificação para ter certeza que o valor é numérico antes de converter
-        try:
-            numeric_value = float(str(value).split(' ')[0])
-            if "fator" in key.lower() and numeric_value < 1.5:
-                color = "danger"
-        except (ValueError, IndexError):
-            pass # Ignora se não for possível converter para float
-        alerts.append(dbc.Alert(f"{key.replace('_', ' ').title()}: {value}", color=color))
-    return html.Div(alerts)
+def update_health_cards(selected_chassis):
+    if not selected_chassis:
+        return dbc.Alert("Nenhum chassi selecionado", color="info")
+    
+    # Vamos exibir os dados do PRIMEIRO chassi da lista selecionada
+    chassis_to_display = selected_chassis[0]
+    dff = df_final[df_final['chassis_number'] == chassis_to_display].iloc[-1]
+    
+    life_used = dff['life_used_percent']
+    
+    gauge_fig = go.Figure(go.Indicator(
+        mode="gauge+number", value=life_used,
+        title={'text': f"Vida Consumida ({chassis_to_display})"},
+        gauge={'axis': {'range': [0, 100]}, 'bar': {'color': "orange"}, 'steps': [{'range': [0, 80], 'color': "green"}, {'range': [80, 100], 'color': "red"}]}
+    ))
+    gauge_fig.update_layout(template='plotly_dark', height=250, margin=dict(l=10, r=10, t=50, b=10))
 
-# --- 6. EXECUÇÃO DO SERVIDOR ---
+    return dcc.Graph(figure=gauge_fig)
+
+# --- 4. EXECUÇÃO DO SERVIDOR ---
 if __name__ == '__main__':
     app.run(debug=True)

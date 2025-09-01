@@ -69,7 +69,7 @@ cd C:\Users\a350748\digital_twin_mvp
 python -m venv .venv
 
 # Ative o ambiente no PowerShell
-.\.venv\Scripts\Activate
+ 
 ```
 
 **3. Instale as Dependências:**
