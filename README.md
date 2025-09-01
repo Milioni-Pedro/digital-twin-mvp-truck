@@ -1,26 +1,27 @@
-# MVP de Gêmeo Digital para Componentes de Caminhão
+# MVP de Gêmeo Digital para Gestão de Frotas e Análise de Durabilidade
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)
 ![Dash](https://img.shields.io/badge/Dash-2.17-blue?logo=plotly)
 ![Scikit-learn](https://img.shields.io/badge/SciKit--Learn-1.3+-orange?logo=scikit-learn)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-Este projeto é um MVP (Minimum Viable Product) funcional de um Gêmeo Digital (Digital Twin) para monitoramento de componentes de um caminhão, com foco inicial em um para-sol da cabine. Inspirado conceitualmente no [Bosch Digital Fuel Twin](https://www.bosch-mobility.com/en/solutions/software-and-services/digital-fuel-twin/), o sistema realiza monitoramento, diagnóstico e prognóstico com base em dados de sensores simulados.
+Este projeto é um MVP (Minimum Viable Product) funcional de um Gêmeo Digital, agora evoluído para uma plataforma de **gestão de frotas**. O sistema monitora, compara e analisa a saúde de múltiplos veículos (chassis), com foco em **durabilidade e prognóstico de falhas por fadiga**.
 
-O objetivo é demonstrar um ciclo completo: desde a aquisição de dados até a visualização interativa, detecção de anomalias, estimativa de vida útil e retroalimentação com simulações de engenharia (FEA).
+Inspirado em plataformas de telemetria e análise de ativos, o objetivo é demonstrar um fluxo completo: desde a geração de dados para uma frota com diferentes perfis operacionais, até um dashboard interativo que permite a **análise comparativa** entre os veículos, identificando os ativos de maior risco e fornecendo insights para manutenção preditiva e desenvolvimento de produtos.
 
-## 📸 Screenshot do Painel
+## 📸 Screenshot do Painel de Frota
 
+*(Dica: Rode o painel, selecione 2 ou 3 chassis diferentes para exibir múltiplas linhas no gráfico, tire um print screen e salve como `dashboard_fleet.png` dentro da pasta `img`)*
 
-![Screenshot do Painel Final](img/dashboard_screenshot.png)
+![Screenshot do Painel de Frota](img/dashboard_fleet.png)
 
 ## ✨ Principais Funcionalidades
 
--   **Geração de Dados Sintéticos**: Criação de um dataset realista com 10.000 amostras, incluindo anomalias pré-definidas (impactos, superaquecimento, falha de sensor).
--   **Dashboard Interativo**: Interface web construída com Dash e Plotly para visualização das séries temporais dos sensores.
--   **Detecção Automática de Anomalias**: Utilização do modelo `IsolationForest` (ou método 3-Sigma) para identificar e destacar eventos anômalos no painel.
--   **Estimativa de Vida Útil**: Cálculo de um índice de dano cumulativo (regra de Miner simplificada) para estimar a vida útil consumida e restante do componente.
--   **Ciclo de Retroalimentação com Simulação FEA (Mock)**: Um botão no painel aciona um script que simula uma análise de elementos finitos (FEA), usando os dados atuais como entrada e exibindo os resultados (tensão máxima, fator de segurança) para "fechar o ciclo" do Gêmeo Digital.
+-   **Geração de Dados Sintéticos para uma Frota**: Criação de um dataset para 5 chassis, cada um com uma "personalidade" única (operação severa, operador cuidadoso, veículo antigo, etc.), simulando perfis de uso realistas.
+-   **Dashboard Interativo com Visualização Comparativa**: A interface web agora permite selecionar múltiplos chassis, exibindo seus dados em linhas coloridas separadas no mesmo gráfico para comparação direta de desempenho e desgaste.
+-   **Análise de Saúde por Ativo**: O modelo de vida por fadiga é aplicado individualmente a cada chassi, permitindo que o painel exiba a saúde específica do veículo selecionado.
+-   **Detecção de Anomalias Pontuais**: O sistema continua identificando eventos extremos (como impactos) que se destacam do desgaste normal por fadiga.
+-   **Ciclo de Retroalimentação com Simulação FEA**: A plataforma mantém a capacidade de realizar análises "what-if" (Estática, Fadiga, Modal) com base nos dados do chassi selecionado.
 
 ## 📁 Estrutura do Projeto
 
@@ -29,9 +30,8 @@ C:\Users\<SEU_USUARIO>\digital_twin_mvp\
 │  README.md
 │  .gitignore
 │  requirements.txt
-│  sunvisor_simulated_data.csv
-│  anomalies.csv
-│  life_estimate.csv
+│  fleet_simulated_data.csv  <- NOVO
+│  fleet_life_estimate.csv   <- NOVO
 │  main_dashboard.py
 │  life_model.py
 │  generate_data.py
@@ -42,7 +42,7 @@ C:\Users\<SEU_USUARIO>\digital_twin_mvp\
 │  └  mock_fea_solver.py
 │
 └─img\
-   └  dashboard_screenshot.png
+   └  dashboard_fleet.png
 ```
 
 ## 🛠️ Tecnologias Utilizadas
@@ -55,9 +55,9 @@ C:\Users\<SEU_USUARIO>\digital_twin_mvp\
 
 ## 🚀 Instalação e Execução
 
-Siga os passos abaixo para rodar o projeto localmente.
+Siga os passos abaixo para rodar a nova versão do projeto.
 
-**1. Clone o Repositório:**
+**1. Clone o Repositório (se ainda não o fez):**
 ```bash
 git clone https://github.com/Milioni-Pedro/digital-twin-mvp-truck.git
 cd C:\Users\a350748\digital_twin_mvp
@@ -69,49 +69,45 @@ cd C:\Users\a350748\digital_twin_mvp
 python -m venv .venv
 
 # Ative o ambiente no PowerShell
- 
+.\.venv\Scripts\Activate
 ```
 
 **3. Instale as Dependências:**
-O arquivo `requirements.txt` contém todas as bibliotecas necessárias.
 ```bash
 pip install -r requirements.txt
 ```
 
 **4. Execute o Projeto (em ordem):**
-É necessário executar os scripts na sequência correta, pois eles geram os arquivos de dados que os scripts seguintes consomem.
+A sequência é crucial para gerar os arquivos de dados da frota.
 
-   **a. Gere os dados simulados:**
+   **a. Gere os dados da frota:**
    ```bash
    python generate_data.py
    ```
-   *Isso cria o `sunvisor_simulated_data.csv`.*
+   *Isso cria o `fleet_simulated_data.csv`.*
 
-   **b. Calcule a estimativa de vida útil:**
-   *Este script lê os dados gerados e realiza a detecção de anomalias internamente, mas para o dashboard final, primeiro rodamos o modelo de vida.*
+   **b. Calcule a estimativa de vida para a frota:**
    ```bash
    python life_model.py
    ```
-   *Isso cria o `life_estimate.csv`.*
+   *Isso cria o `fleet_life_estimate.csv`.*
 
-   **c. Inicie o Painel Interativo:**
-   *Este script lê os arquivos CSV e inicia o servidor web.*
+   **c. Inicie o Painel de Gestão de Frota:**
    ```bash
    python main_dashboard.py
    ```
-   *Isso também cria o `anomalies.csv` na primeira execução.*
-
-   **5. Acesse o Painel:**
+   
+**5. Acesse o Painel:**
    Abra seu navegador e acesse a URL: [http://127.0.0.1:8050/](http://127.0.0.1:8050/)
 
 ## 📈 Plano de Evolução
 
-Este MVP é a base para um sistema de Gêmeo Digital completo. Os próximos passos naturais seriam:
--   [ ] **Dados Reais**: Integrar com sensores de IoT de um caminhão real.
--   [ ] **Hospedagem em Nuvem**: Migrar a aplicação para um serviço como AWS, Azure ou Google Cloud.
--   [ ] **API de Simulação**: Substituir o mock de FEA por uma chamada de API a um solver na nuvem (ex: SimScale).
--   [ ] **Modelos Avançados**: Utilizar Redes Neurais (LSTMs) para prognósticos mais precisos de RUL (Remaining Useful Life).
+Com a base de gestão de frotas estabelecida, os próximos passos são:
+-   [ ] **Dados Reais**: Integrar com a telemetria real dos chassis via IoT.
+-   [ ] **Dashboard de Gestão Agregada**: Criar novas telas, como um mapa de saúde da frota e rankings de veículos por criticidade.
+-   [ ] **Hospedagem em Nuvem**: Migrar a aplicação para um serviço como AWS ou Azure para acesso multi-usuário.
+-   [ ] **Machine Learning Avançado**: Usar os dados da frota para treinar modelos que possam prever falhas com base no comportamento comparativo entre os veículos.
 
 ## 📄 Licença
 
-Distribuído sob a licença MIT. Veja o arquivo `LICENSE` para mais detalhes.
+Distribuído sob a licença MIT.
